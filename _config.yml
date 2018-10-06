@@ -3,12 +3,12 @@
 ## Source: https://github.com/hexojs/hexo/
 
 # Site
-title: Hexo
+title: NEVER GIVE UP
 subtitle:
-description:
+description: hexo, github
 keywords:
-author: John Doe
-language:
+author: newbieyxy
+language: zh-Hans
 timezone:
 
 # URL
@@ -35,7 +35,7 @@ titlecase: false # Transform title into titlecase
 external_link: true # Open external links in new tab
 filename_case: 0
 render_drafts: false
-post_asset_folder: false
+post_asset_folder: true
 relative_link: false
 future: true
 highlight:
@@ -73,12 +73,14 @@ pagination_dir: page
 # Extensions
 ## Plugins: https://hexo.io/plugins/
 ## Themes: https://hexo.io/themes/
-theme: landscape
+## theme: landscape
+theme: next
+plugins: hexo-math
 
 # Deployment
 ## Docs: https://hexo.io/docs/deployment.html
 deploy:
   type: git
-  repository https://github.com/newbieYXY/newbieYXY.github.io.github
+  repository: https://github.com/newbieyxy/newbieyxy.github.io.git
   branch: master
   
