@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><meta charset="utf-8">
+  
+
+  
+  <title>PPO算法原理及代码阅读 | NEVER GIVE UP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="介绍PPO算法原理，并阅读PPO的实现代码">
+<meta name="keywords" content="深度强化学习,PPO">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PPO算法原理及代码阅读">
+<meta property="og:url" content="http://yoursite.com/2018/10/06/PPO-code-reading/index.html">
+<meta property="og:site_name" content="NEVER GIVE UP">
+<meta property="og:description" content="介绍PPO算法原理，并阅读PPO的实现代码">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:image" content="http://yoursite.com/2018/10/06/PPO-code-reading/L_CLIP.PNG">
+<meta property="og:image" content="http://yoursite.com/2018/10/06/PPO-code-reading/PPO_algo.png">
+<meta property="og:updated_time" content="2019-04-27T13:09:05.262Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="PPO算法原理及代码阅读">
+<meta name="twitter:description" content="介绍PPO算法原理，并阅读PPO的实现代码">
+<meta name="twitter:image" content="http://yoursite.com/2018/10/06/PPO-code-reading/L_CLIP.PNG">
+  
+    <link rel="alternate" href="/atom.xml" title="NEVER GIVE UP" type="application/atom+xml">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css"><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+</head>
+
+<body>
+  <!-- hexo-inject:begin --><!-- hexo-inject:end --><div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">NEVER GIVE UP</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-PPO-code-reading" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2018/10/06/PPO-code-reading/" class="article-date">
+  <time datetime="2018-10-06T07:50:20.000Z" itemprop="datePublished">2018-10-06</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      PPO算法原理及代码阅读
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>继策略梯度方法后，PPO成为openAI力推的深度强化学习算法，在收敛性和稳定性上更优于之前的DRL方法。本文首先简单介绍PPO算法的原理，然后对 <a href="https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/pytorch-a2c-ppo-acktr" target="_blank" rel="noopener">https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/pytorch-a2c-ppo-acktr</a> 开源代码中实现PPO的部分开展详细的介绍。</p>
+<h2 id="PPO算法原理"><a href="#PPO算法原理" class="headerlink" title="PPO算法原理"></a>PPO算法原理</h2><h3 id="Motivation"><a href="#Motivation" class="headerlink" title="Motivation"></a>Motivation</h3><p>Policy gradient方法的步长（learning rate）不好确定，太大导致更新太快、不稳定且不易收敛，太小导致收敛速度过慢。因此通过计算new policy和old policy 的占比增加约束条件，限制policy的更新幅度。</p>
+<h3 id="算法结构和流程"><a href="#算法结构和流程" class="headerlink" title="算法结构和流程"></a>算法结构和流程</h3><p>actor-critic结构，两个loss–$J_ppo$和$L$，actor的目标是最大化前者，critic的目标是最小化后者。$J_ppo$的意义是，advantage(TD error)表示新策略value与旧策略value的差别，因此当advantage更大时，表示更新policy的幅度更大，让new policy发生的可能性更大；加上KL散度的约束，即限制了new policy与old policy之间的差距，保证收敛性；因此需要最大化$J_ppo$。$L$的意义即是TD error，最小化error使得value function的近似更加准确。<br>对于actor，优化的目标函数有几种形式：</p>
+<p>$L^{CLIP}(\theta)=\hat{E}_t[min(r_t(\theta)\hat{A}_t, clip(r_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}_t)]$</p>
+<div align="center"><br><img src="/2018/10/06/PPO-code-reading/L_CLIP.PNG" alt="目标函数$L^{CLIP}$"><br>目标函数$L^{CLIP}$</div>
+
+<p>考虑到更新的new policy与old policy之间额差别限制，在目标函数中增加KL散度作为penalty项：<br>$L^{KLPEN}(\theta)=\hat{E}_t[r_t(\theta)\hat{A}_t-\beta KL[\pi_{\theta_{old}, \pi_{\theta_{new}]]$</p>
+<h3 id="单线程PPO"><a href="#单线程PPO" class="headerlink" title="单线程PPO"></a>单线程PPO</h3><p>用$\pi_{\theta_{old}}$与环境交互T步，得到t=1,2,…,T对应的advantage。根据surrogate loss function $J_ppo$，用梯度法更新actor(policy)的参数$theta$；根据TD-error用梯度法更新critic(value function)的参数$\phi$。</p>
+<h3 id="多线程PPO"><a href="#多线程PPO" class="headerlink" title="多线程PPO"></a>多线程PPO</h3><p>多线程PPO相比于单线程PPO来说，区别在于rollouts中样本的来源是单个worker与单个环境交互，还是多个workers分别与多个环境同时交互。总的流程要点如下：</p>
+<ul>
+<li>有一个共同的actor-critic和ppo agent以及storage，有多个workers；</li>
+<li>这些workers平行地在不同环境中收集数据，并根据workers分类存到storage中；</li>
+<li>ppo agent根据从storage中采样得到的样本对actor-critic参数进行更新</li>
+<li>参数更新之后，workers用新的actor-critic继续采集数据，重复以上更新-采集-更新的流程，得到最终的actor-critic模型。</li>
+</ul>
+<p>算法伪代码如下图所示（截图自Google DeepMind的论文<a href="https://arxiv.org/pdf/1707.02286.pdf" target="_blank" rel="noopener">Emergency of locomotion behaviours in rich environments</a>）</p>
+<div align="center"><br><img src="/2018/10/06/PPO-code-reading/PPO_algo.png" alt="多线程PPO算法伪代码"><br>多线程PPO算法伪代码</div>
+
+<h2 id="源码框架"><a href="#源码框架" class="headerlink" title="源码框架"></a>源码框架</h2><p>这份代码实现了多线程的PPO，接下来将从整体框架、逻辑结构以及核心部分具体功能及实现来展开介绍。</p>
+<h3 id="目录框架"><a href="#目录框架" class="headerlink" title="目录框架"></a>目录框架</h3><ul>
+<li>arbitrary files<ul>
+<li>arguments.py</li>
+<li>distributions.py</li>
+<li>logger.py：调用tf.Summary函数，用容器存储训练过程数据</li>
+<li>visualize.py：调用visdom可视化训练过程曲线</li>
+<li>envs.py：调用baselines.bench.Monitor包装实验环境</li>
+</ul>
+</li>
+<li>major files<ul>
+<li>==main.py==：训练</li>
+<li>==storage.py==：存储rollouts数据</li>
+<li>==algo/PPO.py==：PPO算法，参数更新</li>
+<li>model.py：搭建actor和critic的神经网络</li>
+<li>enjoy.py：测试</li>
+</ul>
+</li>
+</ul>
+<h3 id="main-py理解逻辑结构"><a href="#main-py理解逻辑结构" class="headerlink" title="main.py理解逻辑结构"></a>main.py理解逻辑结构</h3><ul>
+<li><p>初始化</p>
+<p>  多线程创建实验环境</p>
+  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">envs = [make_env(args.env_name, args.seed, i, args.log_dir, args.add_timestep) <span class="keyword">for</span> i <span class="keyword">in</span> range(args.num_processes)]</span><br></pre></td></tr></table></figure>
+<p>  创建actor_critic，搭建agent的value function和policy模型</p>
+  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">actor_critic = Policy(obs_shape, envs.action_space, args.recurrent_policy, hasattr(tmp_env.unwrapped, <span class="string">'N'</span>) <span class="keyword">and</span> tmp_env.unwrapped.N <span class="keyword">or</span> <span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+<p>  引入PPO算法，更新模型以及rollouts数据</p>
+  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">agent = algo.PPO(actor_critic, args.clip_param, args.ppo_epoch, args.num_mini_batch,</span><br><span class="line">				args.value_loss_coef, args.entropy_coef, lr=args.lr,</span><br><span class="line">				eps=args.eps, max_grad_norm=args.max_grad_norm)</span><br></pre></td></tr></table></figure>
+<p>  创建rollouts，存储元素包括observations, states, rewards, actions, value_preds, returns, action_log_probs, masks，其中value_preds是…，action_log_probs是新策略和久策略的可能性占比，returns是value function的值，每一个元素的数据结构为(num_steps, num_processes,1)的矩阵。</p>
+  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs.action_space, actor_critic.state_size)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>与环境的交互，收集数据</p>
+<p>  首先，rollouts中初始的observations为初始环境中agent获得的observation。对于一个agent（即一个线程），它的模型根据rollouts中的数据做出决策，</p>
+  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">value, action, action_log_prob, states = actor_critic.act(</span><br><span class="line">						rollouts.observations[step],</span><br><span class="line">						rollouts.states[step],</span><br><span class="line">						rollouts.masks[step])</span><br></pre></td></tr></table></figure>
+<pre><code>得到的action用于环境交互更新环境状态及agent的observation，并将新的数据更新到rollouts中。
+</code></pre>  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">with</span> torch.no_grad():</span><br><span class="line">	next_value = actor_critic.get_value(rollouts.observations[<span class="number">-1</span>],</span><br><span class="line">										rollouts.states[<span class="number">-1</span>],</span><br><span class="line">										rollouts.masks[<span class="number">-1</span>]).detach()</span><br><span class="line"></span><br><span class="line">rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>PPO优化参数<br>  agent根据更新后的rollouts中的数据，更新模型参数。</p>
+  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">value_loss, action_loss, dist_entropy = agent.update(rollouts)</span><br><span class="line"></span><br><span class="line">rollouts.after_update()</span><br></pre></td></tr></table></figure>
+</li>
+</ul>
+<h3 id="核心部分的函数组成"><a href="#核心部分的函数组成" class="headerlink" title="核心部分的函数组成"></a>核心部分的函数组成</h3><p>上面介绍完PPO算法实现的具体流程以及核心部分担当的“角色”，接下来就进一步具体说明核心部分包括哪些成员函数去实现各自的功能。</p>
+<ul>
+<li><p>PPO.py</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">PPO</span><span class="params">(object)</span>:</span></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(self, actor_critic, &lt;relative hyper-parameters ...&gt;)</span>:</span></span><br><span class="line">        <span class="comment"># 初始化超参数，调用actor-critic</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">update</span><span class="params">(self, rollouts)</span>:</span></span><br><span class="line">        <span class="comment"># 从rollouts获取样本，根据actor-critic计算的value loss和action loss更新actor-critic参数</span></span><br><span class="line">        ...</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>model.py</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">Policy</span><span class="params">(nn.Module)</span>:</span></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(self, obs_shape, action_space, recurrent_policy, num_agents=<span class="number">1</span>)</span>:</span></span><br><span class="line">        <span class="comment">#选择value function和policy的网络结构</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">act</span><span class="params">(self, inputs, states, masks, deterministic=False)</span>:</span></span><br><span class="line">        <span class="comment"># 输出action，states，对应的value值，以及action占比</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">get_value</span><span class="params">(self, inputs, states, masks)</span>:</span></span><br><span class="line">        <span class="comment"># 获取value值</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">evaluate_actions</span><span class="params">(self, inputs, states, masks, action)</span>:</span></span><br><span class="line">        <span class="comment"># 评估action，输出value和action占比</span></span><br><span class="line">        ...</span><br><span class="line"></span><br><span class="line"><span class="comment"># 不同网络结构的定义</span></span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">MLPBase</span><span class="params">(nn.Module)</span>:</span></span><br><span class="line">    ...</span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">CNNBase</span><span class="params">(nn.Module)</span>:</span></span><br><span class="line">    ...</span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">RNNBase</span><span class="params">(nn.Module)</span>:</span></span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+<p>  actor的实际输出是以神经网络输出作为均值、以$delta$作为方差生成正态分布，在deterministic为False的时候，采样得到action；在deterministic为True的时候，直接以均值作为action。</p>
+</li>
+<li><p>storage.py</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">RolloutStorage</span><span class="params">(object)</span>:</span></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(self, num_steps, num_processes, obs_shape, action_space, state_size)</span>:</span></span><br><span class="line">        <span class="comment"># 初始化rollouts记录的元素，torch.zeros(x,y,z)三维矩阵的数据结构</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">cuda</span><span class="params">(self)</span>:</span></span><br><span class="line">        <span class="comment"># cpu转gpu</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">insert</span><span class="params">(self, current_obs, state, action, action_log_prob, value_pred, reward, mask)</span>:</span></span><br><span class="line">        <span class="comment"># 更新rollouts存储的元素数据</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">after_update</span><span class="params">(self)</span>:</span></span><br><span class="line">        <span class="comment"># 将最新的元素数据放在初始位置</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">compute_returns</span><span class="params">(self, next_value, use_gae, gamma, tau)</span>:</span></span><br><span class="line">        <span class="comment"># 计算return</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">feed_forward_generator</span><span class="params">(self, advantages, num_mini_batch)</span>:</span></span><br><span class="line">        <span class="comment"># 迭代返回抽样样本</span></span><br><span class="line">        ...</span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">recurrent_generator</span><span class="params">(self, advantages, num_mini_batch)</span>:</span></span><br><span class="line">        <span class="comment"># 迭代返回抽样样本</span></span><br><span class="line">        ...</span><br></pre></td></tr></table></figure>
+<p>  feed_forward_generator的采样过程比较简单，下面具体看看用于RNN的样本生成器recurrent_generator的实现。</p>
+  <figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">recurrent_generator</span><span class="params">(self, advantages, num_mini_batch)</span>:</span></span><br><span class="line">		num_processes = self.rewards.size(<span class="number">1</span>)</span><br><span class="line">		<span class="keyword">assert</span> num_processes &gt;= num_mini_batch, (</span><br><span class="line">			<span class="string">f"PPO requires the number processes (<span class="subst">&#123;num_processes&#125;</span>) "</span></span><br><span class="line">			<span class="string">f"to be greater than or equal to the number of PPO mini batches (<span class="subst">&#123;num_mini_batch&#125;</span>)."</span>)</span><br><span class="line">		num_envs_per_batch = num_processes // num_mini_batch</span><br><span class="line">		perm = torch.randperm(num_processes)</span><br><span class="line">		<span class="keyword">for</span> start_ind <span class="keyword">in</span> range(<span class="number">0</span>, num_processes, num_envs_per_batch):</span><br><span class="line">			observations_batch = []</span><br><span class="line">			states_batch = []</span><br><span class="line">			actions_batch = []</span><br><span class="line">			return_batch = []</span><br><span class="line">			masks_batch = []</span><br><span class="line">			old_action_log_probs_batch = []</span><br><span class="line">			adv_targ = []</span><br><span class="line"></span><br><span class="line">			<span class="keyword">for</span> offset <span class="keyword">in</span> range(num_envs_per_batch):</span><br><span class="line">				ind = perm[start_ind + offset]</span><br><span class="line">				observations_batch.append(self.observations[:<span class="number">-1</span>, ind])</span><br><span class="line">				states_batch.append(self.states[<span class="number">0</span>:<span class="number">1</span>, ind])</span><br><span class="line">				actions_batch.append(self.actions[:, ind])</span><br><span class="line">				return_batch.append(self.returns[:<span class="number">-1</span>, ind])</span><br><span class="line">				masks_batch.append(self.masks[:<span class="number">-1</span>, ind])</span><br><span class="line">				old_action_log_probs_batch.append(self.action_log_probs[:, ind])</span><br><span class="line">				adv_targ.append(advantages[:, ind])</span><br><span class="line"></span><br><span class="line">			<span class="comment">#observations_batch = torch.cat(observations_batch, 0)</span></span><br><span class="line">			<span class="comment">#states_batch = torch.cat(states_batch, 0)</span></span><br><span class="line">			<span class="comment">#actions_batch = torch.cat(actions_batch, 0)</span></span><br><span class="line">			<span class="comment">#return_batch = torch.cat(return_batch, 0)</span></span><br><span class="line">			<span class="comment">#masks_batch = torch.cat(masks_batch, 0)</span></span><br><span class="line">			<span class="comment">#old_action_log_probs_batch = torch.cat(old_action_log_probs_batch, 0)</span></span><br><span class="line">			<span class="comment">#adv_targ = torch.cat(adv_targ, 0)</span></span><br><span class="line"></span><br><span class="line">			T, N = self.num_steps, num_envs_per_batch</span><br><span class="line">			<span class="comment"># These are all tensors of size (T, N, -1)</span></span><br><span class="line">			observations_batch = torch.stack(observations_batch, <span class="number">1</span>)</span><br><span class="line">			actions_batch = torch.stack(actions_batch, <span class="number">1</span>)</span><br><span class="line">			return_batch = torch.stack(return_batch, <span class="number">1</span>)</span><br><span class="line">			masks_batch = torch.stack(masks_batch, <span class="number">1</span>)</span><br><span class="line">			old_action_log_probs_batch = torch.stack(old_action_log_probs_batch, <span class="number">1</span>)</span><br><span class="line">			adv_targ = torch.stack(adv_targ, <span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">			<span class="comment"># States is just a (N, -1) tensor</span></span><br><span class="line">			states_batch = torch.stack(states_batch, <span class="number">1</span>).view(N, <span class="number">-1</span>)</span><br><span class="line"></span><br><span class="line">			<span class="comment"># Flatten the (T, N, ...) tensors to (T * N, ...)</span></span><br><span class="line">			observations_batch = _flatten_helper(T, N, observations_batch)</span><br><span class="line">			actions_batch = _flatten_helper(T, N, actions_batch)</span><br><span class="line">			return_batch = _flatten_helper(T, N, return_batch)</span><br><span class="line">			masks_batch = _flatten_helper(T, N, masks_batch)</span><br><span class="line">			old_action_log_probs_batch = _flatten_helper(T, N, old_action_log_probs_batch)</span><br><span class="line">			adv_targ = _flatten_helper(T, N, adv_targ)</span><br><span class="line"></span><br><span class="line">			<span class="keyword">yield</span> observations_batch, states_batch, actions_batch, \</span><br><span class="line">				return_batch, masks_batch, old_action_log_probs_batch, adv_targ</span><br></pre></td></tr></table></figure>
+</li>
+</ul>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2018/10/06/PPO-code-reading/" data-id="cjuzqo4p30004o0vd5lfxig7g" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/PPO/">PPO</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/深度强化学习/">深度强化学习</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2019/04/28/hello-world/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          Hello World
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2018/10/04/build-hexo-with-github/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">Windows系统下hexo+github搭建个人博客</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/PPO/">PPO</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/hexo/">hexo</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/深度强化学习/">深度强化学习</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/PPO/" style="font-size: 10px;">PPO</a> <a href="/tags/hexo/" style="font-size: 10px;">hexo</a> <a href="/tags/深度强化学习/" style="font-size: 10px;">深度强化学习</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/10/">October 2018</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/04/28/hello-world/">Hello World</a>
+          </li>
+        
+          <li>
+            <a href="/2018/10/06/PPO-code-reading/">PPO算法原理及代码阅读</a>
+          </li>
+        
+          <li>
+            <a href="/2018/10/04/build-hexo-with-github/">Windows系统下hexo+github搭建个人博客</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 newbieyxy<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div><!-- hexo-inject:begin --><!-- Begin: Injected MathJax -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({"tex2jax":{"inlineMath":[["$","$"],["\\(","\\)"]],"skipTags":["script","noscript","style","textarea","pre","code"],"processEscapes":true},"TeX":{"equationNumbers":{"autoNumber":"AMS"}}});
+</script>
+
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Queue(function() {
+    var all = MathJax.Hub.getAllJax(), i;
+    for(i=0; i < all.length; i += 1) {
+      all[i].SourceElement().parentNode.className += ' has-jax';
+    }
+  });
+</script>
+
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js">
+</script>
+<!-- End: Injected MathJax -->
+<!-- hexo-inject:end -->
+</body>
+</html>
