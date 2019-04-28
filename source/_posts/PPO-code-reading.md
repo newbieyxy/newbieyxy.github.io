@@ -20,11 +20,11 @@ Policy gradient方法的步长（learning rate）不好确定，太大导致更�
 actor-critic结构，两个loss--$J\_ppo$和$L$，actor的目标是最大化前者，critic的目标是最小化后者。$J\_ppo$的意义是，advantage(TD error)表示新策略value与旧策略value的差别，因此当advantage更大时，表示更新policy的幅度更大，让new policy发生的可能性更大；加上KL散度的约束，即限制了new policy与old policy之间的差距，保证收敛性；因此需要最大化$J\_ppo$。$L$的意义即是TD error，最小化error使得value function的近似更加准确。
 对于actor，优化的目标函数有几种形式：
 
-$L^{CLIP}(\theta)=\hat{E}\_t[min(r\_t(\theta)\hat{A}\_t, clip(r\_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}\_t)]$
+$$L^{CLIP}(\theta)=\hat{E}\_t[min(r\_t(\theta)\hat{A}\_t, clip(r\_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}\_t)]$
 
-<div align="center">
-![目标函数$L^{CLIP}$](/PPO-code-reading/L_CLIP.PNG)
-目标函数$L^{CLIP}$</div>
+![目标函数$L^{CLIP}$](PPO-code-reading/L_CLIP.PNG)
+
+
 
 考虑到更新的new policy与old policy之间额差别限制，在目标函数中增加KL散度作为penalty项：
 $L^{KLPEN}(\theta)=\hat{E}\_t[r\_t(\theta)\hat{A}\_t-\beta KL[\pi\_{\theta\_{old}, \pi\_{\theta\_{new}]]$
@@ -42,9 +42,11 @@ $L^{KLPEN}(\theta)=\hat{E}\_t[r\_t(\theta)\hat{A}\_t-\beta KL[\pi\_{\theta\_{old
 - 参数更新之后，workers用新的actor-critic继续采集数据，重复以上更新-采集-更新的流程，得到最终的actor-critic模型。
 
 算法伪代码如下图所示（截图自Google DeepMind的论文[Emergency of locomotion behaviours in rich environments](https://arxiv.org/pdf/1707.02286.pdf)）
-<div align="center">
-![多线程PPO算法伪代码](/PPO-code-reading/PPO_algo.png)
-多线程PPO算法伪代码</div>
+
+![多进程PPO算法伪代码](PPO-code-reading/PPO_algo.png)
+
+
+
 
 ## 源码框架
 
@@ -89,22 +91,23 @@ $L^{KLPEN}(\theta)=\hat{E}\_t[r\_t(\theta)\hat{A}\_t-\beta KL[\pi\_{\theta\_{old
 
 - 与环境的交互，收集数据
 
-	首先，rollouts中初始的observations为初始环境中agent获得的observation。对于一个agent（即一个线程），它的模型根据rollouts中的数据做出决策，
-	```python
-	value, action, action_log_prob, states = actor_critic.act(
-							rollouts.observations[step],
-							rollouts.states[step],
-							rollouts.masks[step])
-	```
-		得到的action用于环境交互更新环境状态及agent的observation，并将新的数据更新到rollouts中。
-	```python
-	with torch.no_grad():
-		next_value = actor_critic.get_value(rollouts.observations[-1],
-											rollouts.states[-1],
-											rollouts.masks[-1]).detach()
+  首先，rollouts中初始的observations为初始环境中agent获得的observation。对于一个agent（即一个线程），它的模型根据rollouts中的数据做出决策，
+  ```python
+  value, action, action_log_prob, states = actor_critic.act(
+  						rollouts.observations[step],
+  						rollouts.states[step],
+  						rollouts.masks[step])
+  ```
+  得到的action用于环境交互更新环境状态及agent的observation，并将新的数据更新到rollouts中。
 
-	rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
-	```
+  ```python
+  with torch.no_grad():
+  	next_value = actor_critic.get_value(rollouts.observations[-1],
+  										rollouts.states[-1],
+  										rollouts.masks[-1]).detach()
+  
+  rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
+  ```
 
 - PPO优化参数
 	agent根据更新后的rollouts中的数据，更新模型参数。
@@ -152,8 +155,10 @@ class RNNBase(nn.Module):
     ...
 ```
 
-	actor的实际输出是以神经网络输出作为均值、以$delta$作为方差生成正态分布，在deterministic为False的时候，采样得到action；在deterministic为True的时候，直接以均值作为action。
-    
+actor的实际输出是以神经网络输出作为均值、以$delta$作为方差生成正态分布，在deterministic为False的时候，采样得到action；在deterministic为True的时候，直接以均值作为action。
+
+
+
 - storage.py
 ```python
 class RolloutStorage(object):
@@ -180,62 +185,63 @@ class RolloutStorage(object):
         ...
 ```
 
-	feed\_forward\_generator的采样过程比较简单，下面具体看看用于RNN的样本生成器recurrent_generator的实现。
-	```python
-	def recurrent_generator(self, advantages, num_mini_batch):
-			num_processes = self.rewards.size(1)
-			assert num_processes >= num_mini_batch, (
-				f"PPO requires the number processes ({num_processes}) "
-				f"to be greater than or equal to the number of PPO mini batches ({num_mini_batch}).")
-			num_envs_per_batch = num_processes // num_mini_batch
-			perm = torch.randperm(num_processes)
-			for start_ind in range(0, num_processes, num_envs_per_batch):
-				observations_batch = []
-				states_batch = []
-				actions_batch = []
-				return_batch = []
-				masks_batch = []
-				old_action_log_probs_batch = []
-				adv_targ = []
+feed\_forward\_generator的采样过程比较简单，下面具体看看用于RNN的样本生成器recurrent_generator的实现。
 
-				for offset in range(num_envs_per_batch):
-					ind = perm[start_ind + offset]
-					observations_batch.append(self.observations[:-1, ind])
-					states_batch.append(self.states[0:1, ind])
-					actions_batch.append(self.actions[:, ind])
-					return_batch.append(self.returns[:-1, ind])
-					masks_batch.append(self.masks[:-1, ind])
-					old_action_log_probs_batch.append(self.action_log_probs[:, ind])
-					adv_targ.append(advantages[:, ind])
+```python
+def recurrent_generator(self, advantages, num_mini_batch):
+		num_processes = self.rewards.size(1)
+		assert num_processes >= num_mini_batch, (
+			f"PPO requires the number processes ({num_processes}) "
+			f"to be greater than or equal to the number of PPO mini batches ({num_mini_batch}).")
+		num_envs_per_batch = num_processes // num_mini_batch
+		perm = torch.randperm(num_processes)
+		for start_ind in range(0, num_processes, num_envs_per_batch):
+			observations_batch = []
+			states_batch = []
+			actions_batch = []
+			return_batch = []
+			masks_batch = []
+			old_action_log_probs_batch = []
+			adv_targ = []
+		for offset in range(num_envs_per_batch):
+			ind = perm[start_ind + offset]
+			observations_batch.append(self.observations[:-1, ind])
+			states_batch.append(self.states[0:1, ind])
+			actions_batch.append(self.actions[:, ind])
+			return_batch.append(self.returns[:-1, ind])
+			masks_batch.append(self.masks[:-1, ind])
+			old_action_log_probs_batch.append(self.action_log_probs[:, ind])
+			adv_targ.append(advantages[:, ind])
 
-				#observations_batch = torch.cat(observations_batch, 0)
-				#states_batch = torch.cat(states_batch, 0)
-				#actions_batch = torch.cat(actions_batch, 0)
-				#return_batch = torch.cat(return_batch, 0)
-				#masks_batch = torch.cat(masks_batch, 0)
-				#old_action_log_probs_batch = torch.cat(old_action_log_probs_batch, 0)
-				#adv_targ = torch.cat(adv_targ, 0)
+		#observations_batch = torch.cat(observations_batch, 0)
+		#states_batch = torch.cat(states_batch, 0)
+		#actions_batch = torch.cat(actions_batch, 0)
+		#return_batch = torch.cat(return_batch, 0)
+		#masks_batch = torch.cat(masks_batch, 0)
+		#old_action_log_probs_batch = torch.cat(old_action_log_probs_batch, 0)
+		#adv_targ = torch.cat(adv_targ, 0)
 
-				T, N = self.num_steps, num_envs_per_batch
-				# These are all tensors of size (T, N, -1)
-				observations_batch = torch.stack(observations_batch, 1)
-				actions_batch = torch.stack(actions_batch, 1)
-				return_batch = torch.stack(return_batch, 1)
-				masks_batch = torch.stack(masks_batch, 1)
-				old_action_log_probs_batch = torch.stack(old_action_log_probs_batch, 1)
-				adv_targ = torch.stack(adv_targ, 1)
+		T, N = self.num_steps, num_envs_per_batch
+		# These are all tensors of size (T, N, -1)
+		observations_batch = torch.stack(observations_batch, 1)
+		actions_batch = torch.stack(actions_batch, 1)
+		return_batch = torch.stack(return_batch, 1)
+		masks_batch = torch.stack(masks_batch, 1)
+		old_action_log_probs_batch = torch.stack(old_action_log_probs_batch, 1)
+		adv_targ = torch.stack(adv_targ, 1)
 
-				# States is just a (N, -1) tensor
-				states_batch = torch.stack(states_batch, 1).view(N, -1)
+		# States is just a (N, -1) tensor
+		states_batch = torch.stack(states_batch, 1).view(N, -1)
 
-				# Flatten the (T, N, ...) tensors to (T * N, ...)
-				observations_batch = _flatten_helper(T, N, observations_batch)
-				actions_batch = _flatten_helper(T, N, actions_batch)
-				return_batch = _flatten_helper(T, N, return_batch)
-				masks_batch = _flatten_helper(T, N, masks_batch)
-				old_action_log_probs_batch = _flatten_helper(T, N, old_action_log_probs_batch)
-				adv_targ = _flatten_helper(T, N, adv_targ)
+		# Flatten the (T, N, ...) tensors to (T * N, ...)
+		observations_batch = _flatten_helper(T, N, observations_batch)
+		actions_batch = _flatten_helper(T, N, actions_batch)
+		return_batch = _flatten_helper(T, N, return_batch)
+		masks_batch = _flatten_helper(T, N, masks_batch)
+		old_action_log_probs_batch = _flatten_helper(T, N, old_action_log_probs_batch)
+		adv_targ = _flatten_helper(T, N, adv_targ)
 
-				yield observations_batch, states_batch, actions_batch, \
-					return_batch, masks_batch, old_action_log_probs_batch, adv_targ
-	```
+		yield observations_batch, states_batch, actions_batch, \
+			return_batch, masks_batch, old_action_log_probs_batch, adv_targ
+```
+
