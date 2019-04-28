@@ -1,5 +1,5 @@
 ---
-title: transer-blog-to-new-pc
+title: 将hexo搭建的博客迁移到新的环境
 date: 2019-04-28 10:58:31
 tags: hexo
 description: 迁移hexo下搭建的博客，在新的电脑中同步更新博客文件
