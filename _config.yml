@@ -83,4 +83,4 @@ deploy:
   type: git
   repository: https://github.com/newbieyxy/newbieyxy.github.io.git
   branch: master
-  
+

@@ -11,27 +11,31 @@ mathjax: true
 
 继策略梯度方法后，PPO成为openAI力推的深度强化学习算法，在收敛性和稳定性上更优于之前的DRL方法。本文首先简单介绍PPO算法的原理，然后对 https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/pytorch-a2c-ppo-acktr 开源代码中实现PPO的部分开展详细的介绍。
 
+
+
 ## PPO算法原理
 
 ### Motivation
 Policy gradient方法的步长（learning rate）不好确定，太大导致更新太快、不稳定且不易收敛，太小导致收敛速度过慢。因此通过计算new policy和old policy 的占比增加约束条件，限制policy的更新幅度。
 
+
+
 ### 算法结构和流程
-actor-critic结构，两个loss--$J\_ppo$和$L$，actor的目标是最大化前者，critic的目标是最小化后者。$J\_ppo$的意义是，advantage(TD error)表示新策略value与旧策略value的差别，因此当advantage更大时，表示更新policy的幅度更大，让new policy发生的可能性更大；加上KL散度的约束，即限制了new policy与old policy之间的差距，保证收敛性；因此需要最大化$J\_ppo$。$L$的意义即是TD error，最小化error使得value function的近似更加准确。
+actor-critic结构，两个loss--$J_{ppo}$和$L$，actor的目标是最大化前者，critic的目标是最小化后者。$J_{ppo}$的意义是，advantage(TD error)表示新策略value与旧策略value的差别，因此当advantage更大时，表示更新policy的幅度更大，让new policy发生的可能性更大；加上KL散度的约束，即限制了new policy与old policy之间的差距，保证收敛性；因此需要最大化$J_{ppo}$。$L$的意义即是TD error，最小化error使得value function的近似更加准确。
 对于actor，优化的目标函数有几种形式：
 
-$$L^{CLIP}(\theta)=\hat{E}\_t[min(r\_t(\theta)\hat{A}\_t, clip(r\_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}\_t)]$
+$$L^{CLIP}(\theta)=\hat{E}_t[min(r_t(\theta)\hat{A}_t, clip(r_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}_t)]$$
 
 ![目标函数$L^{CLIP}$](PPO-code-reading/L_CLIP.PNG)
 
 
 
 考虑到更新的new policy与old policy之间额差别限制，在目标函数中增加KL散度作为penalty项：
-$L^{KLPEN}(\theta)=\hat{E}\_t[r\_t(\theta)\hat{A}\_t-\beta KL[\pi\_{\theta\_{old}, \pi\_{\theta\_{new}]]$
+$$L^{KLPEN}(\theta)=\hat{E}_t[r_t(\theta)\hat{A}_t-\beta  KL[\pi_{\theta_{old}}, \pi_{\theta_{new}}]]$$
 
 ### 单线程PPO
 
-用$\pi\_{\theta\_{old}}$与环境交互T步，得到t=1,2,...,T对应的advantage。根据surrogate loss function $J\_ppo$，用梯度法更新actor(policy)的参数$theta$；根据TD-error用梯度法更新critic(value function)的参数$\phi$。
+用$\pi_{\theta_{old}}$与环境交互T步，得到t=1,2,...,T对应的advantage。根据surrogate loss function $J_{ppo}$，用梯度法更新actor(policy)的参数$\theta$；根据TD-error用梯度法更新critic(value function)的参数$\phi$。
 
 ### 多线程PPO
 
